@@ -1,0 +1,16 @@
+{
+  "name": "myrecovery",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",  
+  "scripts": {  
+    "test": "node recovery.js"  
+  },  
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bip39": "^3.1.0"
+  }
+}
