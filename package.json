@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "type": "module",  
-  "scripts": {  
-    "test": "node recovery.js"  
-  },  
+  "type": "module",
+  "scripts": {
+    "test": "node recovery.js"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bip39": "^3.1.0"
+    "bip39": "^3.1.0",
+    "ethereumjs-wallet": "^1.0.2",
+    "ethers": "^6.13.4",
+    "tronweb": "^6.0.0"
   }
 }
