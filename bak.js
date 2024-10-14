@@ -10,14 +10,9 @@ const tronWeb = new TronWeb({
     fullHost: 'https://api.trongrid.io'
 });
 
-const possibleAddresses = [  
-    // 将你的5个可能的地址放在这里  
-    'THubKduunkXkhN2L5XhwvupiF3RHXKqhCa',  
-    'TGbuqWZhLQFAMMkDsgLVLRNmX1yZBibdF2',  
-    'THikxrJXDfeudLsMDzL366WvhoG6Li4CZ7',  
-    'TQvG3YYNPkxWtAhQALDhRQwqXgeqMNJCen'
-  ];  
-
+const MAX_RETRIES = 5; // Maximum number of retries
+// HTX 代币合约地址
+const tokenContractAddress = 'TUPM7K8REVzD2UdV4R5fe5M8XbnR2DdoJ6';
 
 // 已知的助记词部分（包含顺序和遗忘单词的首字母占位符）  
 const knownMnemonicParts = [  
@@ -44,6 +39,12 @@ function* generateCombinations(words, length) {
 
 // 从助记词生成私钥
 function getPrivateKeyFromMnemonic(mnemonic) {
+    // const seed = bip39.mnemonicToSeedSync(mnemonic);
+    // const hdWallet = hdkey.fromMasterSeed(seed);
+    // const walletHDPath = "m/44'/195'/0'/0/0"; // Tron使用的HD路径
+    // const wallet = hdWallet.derivePath(walletHDPath).getWallet();
+    // return wallet.getPrivateKeyString();
+
     // const mnemonicObj = Mnemonic.fromPhrase(mnemonic); // 使用 Mnemonic 类生成对象
     const wallet = fromPhrase(mnemonic); // 从 Mnemonic 对象生成 Wallet
     return wallet.privateKey;
@@ -57,7 +58,7 @@ function  fromPhrase(phrase) {
 }
 
 // 检查代币余额
-async function checkTokenBalance(mnemonic) {
+async function checkTokenBalance(mnemonic,countIndex) {
     try {
         // 从助记词生成钱包私钥和地址
         const privateKey  = getPrivateKeyFromMnemonic(mnemonic);
@@ -65,8 +66,22 @@ async function checkTokenBalance(mnemonic) {
         const address = tronWeb.address.fromPrivateKey(trimmedString);
         console.log(`钱包地址: ${address}`);
 
+        // 查询 TRX 余额
+        // const balanceInSun = await tronWeb.trx.getBalance(address);
+        // const balance = tronWeb.fromSun(balanceInSun); // 将 Sun 转换为 TRX
+
+        // // 获取合约实例
+        const contract = await tronWeb.contract().at(tokenContractAddress);
+
+        // 查询地址的HTX代币余额
+        const balance = await contract.balanceOf(address).call({
+            from: address // 显式指定 owner_address
+            });
+        const tokenBalance = tronWeb.toDecimal(balance);
+        console.log(`代币余额: ${tokenBalance}`);
+
         // 如果持有代币，记录助记词信息
-        if (possibleAddresses.includes(address)) {
+        if (tokenBalance > 0) {
             console.log(`HTX found! Mnemonic: ${mnemonic}, Address: ${address}, Balance: ${tokenBalance}`);
             return true;
         }else{
@@ -75,9 +90,15 @@ async function checkTokenBalance(mnemonic) {
 
     } catch (error) {
         console.error(`Error processing mnemonic: ${mnemonic} - ${error.message}`);
-        await fs.appendFile('recoveredMnemonic.txt', '错误----'+mnemonic+'\n');   
-        return false;
-
+        countIndex ++;
+        await sleep(10000);
+        if(countIndex<MAX_RETRIES){
+            const flag = await checkTokenBalance(mnemonic,countIndex);
+            return flag;
+        }else{
+            await fs.appendFile('recoveredMnemonic.txt', '错误----'+mnemonic+'\n');   
+            return false;
+        }
     }
 }
 
@@ -116,28 +137,26 @@ async function recoverMnemonic() {
         }   
     }  
     //清空文件
-    await fs.writeFile('recoveredMnemonic.txt', '');   
-    await fs.writeFile('error.txt', '');  
+    await fs.writeFile('recoveredMnemonic.txt', '\n');   
 
     try{
         for await (const candidateForgottenWords of cartesianProduct(combinations)) {  
+            const mnemonic = knownMnemonicParts.map((word, index) =>  
+                word.includes('___')  
+                    ? candidateForgottenWords[forgottenLetters.findIndex(letter => word.startsWith(letter))]  
+                    : word  
+            );  
+    
+            // 在这里，你可以添加验证助记词有效性的逻辑  
+            // 例如，使用 bip39.validateMnemonic(candidateMnemonic.join(' '))  
+            const strmne = mnemonic.join(' ');
             try{
-                const mnemonic = knownMnemonicParts.map((word, index) =>  
-                    word.includes('___')  
-                        ? candidateForgottenWords[forgottenLetters.findIndex(letter => word.startsWith(letter))]  
-                        : word  
-                );  
-        
-                // 在这里，你可以添加验证助记词有效性的逻辑  
-                // 例如，使用 bip39.validateMnemonic(candidateMnemonic.join(' '))  
-                const strmne = mnemonic.join(' ');
-           
                 // 假设我们在这里已经验证了助记词的有效性（或者省略验证步骤）  
                 // 直接将候选助记词保存到文件（为了演示，我们总是保存第一个找到的组合）  
                 const isValid = bip39.validateMnemonic(strmne);  
                 if (isValid) {  
                     console.log(`可能的助记词: ${strmne}`); 
-                    const boolenFlag = await checkTokenBalance(strmne);
+                    const boolenFlag = await checkTokenBalance(strmne,0);
                     if(boolenFlag){
                         await fs.appendFile('recoveredMnemonic.txt', strmne+'\n');   
                         break;
@@ -146,7 +165,7 @@ async function recoverMnemonic() {
                     // console.log('助记词无效');  
                 }  
             }catch(error){
-                await fs.appendFile('error.txt', '发生错误'+error+'\n');   
+                console.error('发生错误:', error);  
                 await sleep(10000) 
             }
         }  
@@ -154,9 +173,9 @@ async function recoverMnemonic() {
         // 如果没有找到有效助记词（在实际应用中应该有这个逻辑）  
         // console.log('No valid mnemonic found.');  
     }catch(error){
-        await fs.appendFile('error.txt', '发生错误'+error+'\n');   
+        console.error('发生错误:', error);  
     }
     
 }  
   
-recoverMnemonic().catch(await fs.appendFile('error.txt', '发生错误'+error+'\n'));
+recoverMnemonic().catch(console.error);
