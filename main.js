@@ -159,4 +159,4 @@ async function recoverMnemonic() {
     
 }  
   
-recoverMnemonic().catch(await fs.appendFile('error.txt', '发生错误'+error+'\n'));
+recoverMnemonic().catch(console.error);
